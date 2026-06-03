@@ -204,7 +204,7 @@ class AES128 {
     /**
      * Phép nhân trong trường hữu hạn Galois GF(2^8).
      * Đa thức tối giản của AES: P(x) = x^8 + x^4 + x^3 + x + 1 (0x11B)
-     * Độ phức tạp: O(1) — tối đa 8 vòng lặp bit
+     * Độ phức tạp: O(1) — tối đa 8 vòng lặp bit, early-exit khi b = 0
      * 
      * @param {number} a - Toán hạng thứ nhất (0-255)
      * @param {number} b - Toán hạng thứ hai (0-255)
@@ -212,12 +212,12 @@ class AES128 {
      */
     static galoisMultiply(a, b) {
         let p = 0;
-        for (let counter = 0; counter < 8; counter++) {
-            if ((b & 1) !== 0) p ^= a;          // Nếu bit thấp nhất của b = 1, cộng a
-            const hiBitSet = (a & 0x80) !== 0;   // Kiểm tra bit cao nhất của a
-            a <<= 1;                              // Nhân a với x
-            if (hiBitSet) a ^= 0x11b;             // Nếu tràn, rút gọn modulo P(x)
-            b >>= 1;                              // Chia b cho x
+        while (b !== 0) {                         // Early-exit: dừng khi b = 0
+            if (b & 1) p ^= a;                    // Nếu bit thấp nhất của b = 1, cộng a
+            const hiBitSet = (a & 0x80) !== 0;    // Kiểm tra bit cao nhất của a
+            a <<= 1;                               // Nhân a với x
+            if (hiBitSet) a ^= 0x11b;              // Nếu tràn, rút gọn modulo P(x)
+            b >>= 1;                               // Chia b cho x
         }
         return p & 0xFF;
     }
@@ -228,6 +228,7 @@ class AES128 {
      *          [01 02 03 01]
      *          [01 01 02 03]
      *          [03 01 01 02]
+     * Mỗi cột tính 4 phép nhân GF(2^8) cho 02·x, rồi tận dụng 03·x = 02·x ⊕ x.
      * Độ phức tạp: O(1) — 4 cột × 4 phép nhân GF(2^8)
      */
     static mixColumns(state) {
@@ -238,10 +239,16 @@ class AES128 {
             const s2 = state[col + 2];
             const s3 = state[col + 3];
 
-            state[col]     = this.galoisMultiply(0x02, s0) ^ this.galoisMultiply(0x03, s1) ^ s2 ^ s3;
-            state[col + 1] = s0 ^ this.galoisMultiply(0x02, s1) ^ this.galoisMultiply(0x03, s2) ^ s3;
-            state[col + 2] = s0 ^ s1 ^ this.galoisMultiply(0x02, s2) ^ this.galoisMultiply(0x03, s3);
-            state[col + 3] = this.galoisMultiply(0x03, s0) ^ s1 ^ s2 ^ this.galoisMultiply(0x02, s3);
+            // Chỉ 4 phép nhân GF(2^8): tính 02·x một lần cho mỗi đầu vào
+            const s0x2 = this.galoisMultiply(0x02, s0);
+            const s1x2 = this.galoisMultiply(0x02, s1);
+            const s2x2 = this.galoisMultiply(0x02, s2);
+            const s3x2 = this.galoisMultiply(0x02, s3);
+            // 03·x = 02·x ⊕ x (tận dụng, không cần nhân lại)
+            state[col]     = s0x2 ^ s1x2 ^ s1 ^ s2 ^ s3;           // 02·s0 ⊕ 03·s1 ⊕ s2 ⊕ s3
+            state[col + 1] = s0 ^ s1x2 ^ s2x2 ^ s2 ^ s3;           // s0 ⊕ 02·s1 ⊕ 03·s2 ⊕ s3
+            state[col + 2] = s0 ^ s1 ^ s2x2 ^ s3x2 ^ s3;           // s0 ⊕ s1 ⊕ 02·s2 ⊕ 03·s3
+            state[col + 3] = s0x2 ^ s0 ^ s1 ^ s2 ^ s3x2;           // 03·s0 ⊕ s1 ⊕ s2 ⊕ 02·s3
         }
     }
 
@@ -251,7 +258,7 @@ class AES128 {
      *          [09 0E 0B 0D]
      *          [0D 09 0E 0B]
      *          [0B 0D 09 0E]
-     * Độ phức tạp: O(1) — 4 cột × 4 phép nhân GF(2^8)
+     * Độ phức tạp: O(1) — 4 cột × 16 phép nhân GF(2^8)
      */
     static invMixColumns(state) {
         for (let c = 0; c < 4; c++) {

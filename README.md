@@ -137,7 +137,7 @@ Lớp `AES128` chứa toàn bộ cài đặt thuật toán AES-128 (mã hóa và
 
 | Hàm | Mô tả | Độ phức tạp |
 |-----|-------|-------------|
-| `galoisMultiply(a, b)` | Nhân hai đa thức trong GF(2⁸), modulo P(x) = x⁸+x⁴+x³+x+1 (0x11B) | O(1) — 8 vòng bit |
+| `galoisMultiply(a, b)` | Nhân hai đa thức trong GF(2⁸), modulo P(x) = x⁸+x⁴+x³+x+1 (0x11B) | O(1) — 0～8 vòng bit (early-exit) |
 
 ---
 
@@ -290,7 +290,7 @@ flowchart TD
 | Key Expansion | 44 word × 4 byte | **O(1)** | Cố định với AES-128 |
 | SubBytes | 16 lần tra S-Box/vòng × 10 vòng = 160 | **O(1)** | Tra bảng O(1)/byte |
 | ShiftRows | 12 phép gán/vòng × 10 vòng | **O(1)** | Cố định 16 byte |
-| MixColumns | 4 cột × 4 phép nhân GF(2⁸) × 9 vòng | **O(1)** | Mỗi phép nhân ≤ 8 vòng bit |
+| MixColumns | 4 cột × 4 phép nhân GF(2⁸) × 9 vòng | **O(1)** | 02·x tính trước, 03·x = 02·x ⊕ x |
 | AddRoundKey | 16 XOR/vòng × 11 vòng (vòng 0-10) | **O(1)** | |
 | **Tổng 1 khối** | | **O(1)** | ~300-400 thao tác cơ bản |
 
@@ -298,9 +298,10 @@ flowchart TD
 
 | Trường hợp | Số vòng lặp | Ghi chú |
 |------------|------------|---------|
-| Xấu nhất (worst-case) | 8 | Khi b có bit cao nhất = 1 |
-| Tốt nhất (best-case) | 1 | Khi b = 0 hoặc b = 1 |
-| Trung bình (average) | ~4 | Phân bố đều |
+| Xấu nhất (worst-case) | 8 | Khi b có bit 7 = 1 (b ≥ 128) |
+| Tốt nhất (best-case) | 1 | Khi b = 1 |
+| Trung bình (average) | ~4 | Phân bố đều, early-exit khi b = 0 |
+| b = 0 | 0 | Thoát ngay, kết quả = 0 |
 
 ### AES-128-CBC (n khối)
 
@@ -368,9 +369,9 @@ Từ mô phỏng này, chúng ta rút ra các bài học quan trọng:
 | # | Bài học | Giải thích |
 |---|---------|------------|
 | 1 | **Không để lộ thông tin lỗi** | Server không nên phân biệt "sai padding" vs "sai MAC" — luôn trả về lỗi chung |
-| 2 | **Dùng AEAD** | Các chế độ như **GCM**, **CCM** vừa mã hóa vừa xác thực, miễn nhiễm Padding Oracle |
+| 2 | **Dùng AEAD** | GCM, CCM dùng CTR mode (không padding) + authentication tag. Luôn **xác thực tag trước khi giải mã** để tránh oracle |
 | 3 | **Encrypt-then-MAC** | Tính MAC trước khi kiểm tra padding — nếu MAC sai, không bao giờ động đến padding |
-| 4 | **Padding Oracle có thật** | Đã ảnh hưởng TLS (Lucky13), JWT (CVE-2015-9235), ASP.NET (CVE-2010-3332) |
+| 4 | **Padding Oracle có thật** | Đã ảnh hưởng TLS (Lucky13, CVE-2013-0169), OpenSSL (CVE-2016-2107), ASP.NET (CVE-2010-3332), Java Server Faces |
 
 ### 5. Kết Luận
 
