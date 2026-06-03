@@ -540,5 +540,5 @@ console.log('  - Đây là mã nguồn GIÁO DỤC, không dùng cho mục đíc
 console.log('  - Trong production, dùng Node.js crypto hoặc Web Crypto API.');
 console.log('  - Padding Oracle là lỗ hổng THỰC TẾ, đã từng ảnh hưởng đến');
 console.log('    TLS, JWT, ASP.NET, Java Server Faces, và nhiều framework khác.');
-console.log('  - Cách phòng chống: Dùng chế độ AEAD (GCM), MAC-then-Encrypt,');
-console.log('    hoặc trả về lỗi CHUNG cho mọi trường hợp giải mã thất bại.');
+console.log('  - Cách phòng chống: Dùng chế độ AEAD như AES-GCM/ChaCha20-Poly1305,');
+console.log('    hoặc Encrypt-then-MAC (kiểm tra tag/MAC trước khi xử lý padding),');

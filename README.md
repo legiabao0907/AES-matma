@@ -178,7 +178,7 @@ File mô phỏng đầy đủ kịch bản tấn công Padding Oracle trên AES-
 
 | Hàm | Mô tả | Độ phức tạp |
 |-----|-------|-------------|
-| `decryptByte(oracle, prevBlock, targetBlock, pos, knownI)` | Tấn công 1 byte bằng brute-force (0-255) | O(1) — tối đa 256 lần Oracle |
+| `decryptByteCandidates(oracle, prevBlock, targetBlock, pos, knownIntermediate)` | Tấn công 1 byte — brute-force (0-255), trả về mảng ứng viên hợp lệ | O(1) — tối đa 256 lần Oracle |
 | `decryptBlock(oracle, prevBlock, targetBlock, verbose?)` | Tấn công toàn bộ 1 khối (16 byte) | O(1) — tối đa 4096 lần Oracle |
 | `paddingOracleAttack(oracle, iv, ciphertext, verbose?)` | Tấn công toàn bộ bản mã (n khối) | O(n) — tuyến tính theo số khối |
 
@@ -309,7 +309,7 @@ flowchart TD
 |------------|-------------|
 | Mã hóa | **O(n)** — mỗi khối O(1) |
 | Giải mã | **O(n)** — mỗi khối O(1) |
-| Bộ nhớ | **O(1)** nếu xử lý streaming, **O(n)** nếu lưu tất cả |
+| Bộ nhớ | **O(1)** nếu xử lý streaming (về lý thuyết); **O(n)** trong code hiện tại do lưu toàn bộ plaintext/ciphertext |
 
 ### Tấn Công Padding Oracle
 
@@ -326,7 +326,7 @@ flowchart TD
 | Thuật toán | Thời gian | Không gian | Ghi chú |
 |------------|-----------|------------|---------|
 | AES-128 mã hóa 1 khối | O(1) | O(1) | 176 byte expanded key |
-| AES-128-CBC mã hóa n byte | O(n) | O(1) streaming | ~n/16 khối |
+| AES-128-CBC mã hóa n byte | O(n) | O(1) streaming (lý thuyết) / O(n) (code hiện tại) | ~n/16 khối |
 | Padding Oracle 1 block | O(1) | O(1) | Tối đa 4096 Oracle calls |
 | Padding Oracle n bytes | **O(n)** | O(1) | Tuyến tính! Không cần brute-force 2¹²⁸ |
 
@@ -343,14 +343,14 @@ flowchart TD
 | **Tính giáo dục** | ⭐⭐⭐⭐⭐ — Code thuần túy, không thư viện, comment tiếng Việt chi tiết |
 | **Tính trực quan** | ⭐⭐⭐⭐⭐ — `verbose=true` in ra ma trận State từng vòng, thấy rõ biến đổi |
 | **Tính đầy đủ** | ⭐⭐⭐⭐⭐ — Có cả mã hóa + giải mã, tấn công từng byte → toàn bộ khối → nhiều khối |
-| **Tính chính xác** | ⭐⭐⭐⭐⭐ — So sánh với Node.js `crypto` cho kết quả khớp |
+| **Tính chính xác** | ⭐⭐⭐⭐⭐ — So sánh với Node.js `crypto` cho kết quả khớp (nên bổ sung test vector chuẩn NIST để kiểm chứng đầy đủ) |
 
 ### 2. Hạn Chế
 
 | Hạn chế | Mô tả | Hướng khắc phục |
 |---------|-------|-----------------|
 | **Hiệu năng** | JavaScript không tối ưu cho phép toán bit cấp thấp | Dùng WebAssembly hoặc native module |
-| **Không có CTR/GCM** | Chỉ hỗ trợ ECB (1 khối) và CBC (tự cài thêm) | Mở rộng thêm chế độ mã hóa |
+| **Không có CTR/GCM** | Mã hóa một block AES thô; CBC được tự cài đặt thêm (không phải chế độ ECB hoàn chỉnh) | Mở rộng thêm chế độ mã hóa |
 | **Không chống side-channel** | Không bảo vệ chống timing attack | Dùng constant-time comparison |
 
 ### 3. So Sánh Với Thư Viện Chuẩn
