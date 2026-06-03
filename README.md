@@ -178,8 +178,8 @@ File mô phỏng đầy đủ kịch bản tấn công Padding Oracle trên AES-
 
 | Hàm | Mô tả | Độ phức tạp |
 |-----|-------|-------------|
-| `decryptByteCandidates(oracle, prevBlock, targetBlock, pos, knownIntermediate)` | Tấn công 1 byte — brute-force (0-255), trả về mảng ứng viên hợp lệ | O(1) — tối đa 256 lần Oracle |
-| `decryptBlock(oracle, prevBlock, targetBlock, verbose?)` | Tấn công toàn bộ 1 khối (16 byte) | O(1) — tối đa 4096 lần Oracle |
+| `decryptByteCandidates(oracle, prevBlock, targetBlock, pos, knownIntermediate)` | Tấn công 1 byte — brute-force (0-255), trả về mảng ứng viên hợp lệ | O(1) — luôn 256 lần Oracle (duyệt đủ 0..255, không dừng sớm) |
+| `decryptBlock(oracle, prevBlock, targetBlock, verbose?)` | Tấn công toàn bộ 1 khối (16 byte) + backtracking | O(1) — cơ bản 4096 calls/block; có thể hơn do backtracking |
 | `paddingOracleAttack(oracle, iv, ciphertext, verbose?)` | Tấn công toàn bộ bản mã (n khối) | O(n) — tuyến tính theo số khối |
 
 #### Hàm Demo
@@ -300,7 +300,7 @@ flowchart TD
 |------------|------------|---------|
 | Xấu nhất (worst-case) | 8 | Khi b có bit 7 = 1 (b ≥ 128) |
 | Tốt nhất (best-case) | 1 | Khi b = 1 |
-| Trung bình (average) | ~7.00 | B phụ thuộc vào byte dữ liệu; trung bình ~7 bit set/byte |
+| Trung bình (average) | ~7.00 | Số vòng lặp = bit-length của b; trung bình ~7 vòng nếu b phân bố đều 0..255 |
 | b = 0 | 0 | Thoát ngay, kết quả = 0 |
 
 ### AES-128-CBC (n khối)
@@ -315,11 +315,11 @@ flowchart TD
 
 | Mức độ | Số lần gọi Oracle | Công thức |
 |--------|-------------------|-----------|
-| 1 byte | 1 – 256 | `guess_count(byte)` |
-| 1 khối (16 byte) | 16 – 4096+ | `Σ(1→256) × 16` (4096 nếu không backtracking; code có backtracking nên worst-case > 4096, nhưng vẫn là hằng số/block) |
-| Trung bình 1 khối | ~2048 | Mỗi byte trung bình 128 lần |
-| **n khối** | **n × (256 × 16)** (tối đa) | **O(n)** — tuyến tính |
-| n khối (trung bình) | n × 2048 | Thực tế thấp hơn nhiều |
+| 1 byte | 256 | Luôn duyệt đủ 0..255, không dừng sớm |
+| 1 khối (16 byte) | ≥ 4096 | 16 × 256 = 4096 (cơ bản, không backtracking); có thể hơn nếu backtracking phát sinh |
+| Cơ bản 1 khối (không backtracking) | 4096 | 16 byte × 256 lần/byte |
+| **n khối** | **n × (256 × 16)** (chi phí cơ bản, chưa tính backtracking) | **O(n)** — tuyến tính |
+| n khối (cơ bản, không backtracking) | n × 4096 | 16 × 256 × n |
 
 ### Bảng So Sánh Độ Phức Tạp Tổng Hợp
 
@@ -327,7 +327,7 @@ flowchart TD
 |------------|-----------|------------|---------|
 | AES-128 mã hóa 1 khối | O(1) | O(1) | 176 byte expanded key |
 | AES-128-CBC mã hóa n byte | O(n) | O(1) streaming (lý thuyết) / O(n) (code hiện tại) | ~n/16 khối |
-| Padding Oracle 1 block | O(1) | O(1) | Tối đa 4096 Oracle calls |
+| Padding Oracle 1 block | O(1) | O(1) | Cơ bản 4096 calls/block; có thể hơn do backtracking |
 | Padding Oracle n bytes | **O(n)** | O(n) (code hiện tại) | Lưu `blocks`, `plaintextBlocks`, concat plaintext |
 
 > ⚠️ **Điểm quan trọng**: Độ phức tạp của tấn công là **O(n)** — TUYẾN TÍNH theo độ dài plaintext. Điều này có nghĩa là khóa AES-128 128-bit không bị phá vỡ (vẫn cần 2¹²⁸ để brute-force khóa), nhưng nếu có Oracle, kẻ tấn công khôi phục plaintext với chi phí **rất thấp**.
