@@ -25,10 +25,10 @@
  *   Sau đó leo lên padding 0x02, 0x03, ... để khôi phục toàn bộ P_i.
  *
  * ĐỘ PHỨC TẠP:
- *   - Tấn công 1 byte:    O(1) — tối đa 256 lần thử (trung bình 128)
- *   - Tấn công 1 khối:    O(1) — 16 byte × 256 = tối đa 4096 lần gọi Oracle
+ *   - Tấn công 1 byte:    O(1) — luôn 256 lần Oracle (duyệt đủ 0..255, không dừng sớm)
+ *   - Tấn công 1 khối:    O(1) — cơ bản 16×256=4096 calls/block; có thể hơn do backtracking
  *   - Tấn công n khối:     O(n) — tuyến tính theo số khối
- *   - Tổng số lần Oracle:  n_blocks × 16 × 256 (worst-case)
+ *   - Tổng số lần Oracle:  n_blocks × 16 × 256 (chi phí cơ bản, chưa tính backtracking)
  */
 
 'use strict';
@@ -264,7 +264,7 @@ function decryptByteCandidates(oracle, prevBlock, targetBlock, pos, knownInterme
  *   4. Nếu byte tiếp theo KHÔNG có guess nào → guess hiện tại SAI → backtrack
  *   5. Nếu byte tiếp theo có guess → giữ lại, tiếp tục
  *
- * Độ phức tạp: O(1) — 16 × 256 lần Oracle, backtrack không đáng kể
+ * Độ phức tạp: O(1) — cơ bản 4096 calls/block; có thể hơn do backtracking
  *
  * @returns {{ intermediate: number[], plaintext: Buffer }}
  */
@@ -348,7 +348,7 @@ function decryptBlock(oracle, prevBlock, targetBlock, verbose = false) {
  *
  * Độ phức tạp:
  *   - Thời gian: O(n) — tuyến tính theo số khối
- *   - Số lần Oracle: n × 16 × 128 (trung bình) — tối đa n × 4096
+ *   - Số lần Oracle: n × 16 × 256 = n × 4096 (cơ bản, chưa tính backtracking)
  *   - Với AES-128, mỗi lần Oracle = 1 lần giải mã AES + kiểm tra padding
  *
  * @param {Function} oracle - Hàm checkPadding(iv, ciphertext)
@@ -366,8 +366,8 @@ function paddingOracleAttack(oracle, iv, ciphertext, verbose = true) {
     const plaintextBlocks = [];
 
     console.log(`\n  ▶ Bản mã có ${numBlocks} khối (${ciphertext.length} byte)`);
-    console.log(`  ▶ Mỗi khối cần tối đa 16 × 256 = 4096 lần gọi Oracle`);
-    console.log(`  ▶ Tổng tối đa: ${numBlocks} × 4096 = ${numBlocks * 4096} lần gọi Oracle\n`);
+    console.log(`  ▶ Mỗi khối cần cơ bản 16 × 256 = 4096 lần gọi Oracle (có thể hơn do backtracking)`);
+    console.log(`  ▶ Tổng cơ bản: ${numBlocks} × 4096 = ${numBlocks * 4096} lần gọi Oracle (chưa tính backtracking)\n`);
 
     // Tách thành từng khối
     const blocks = [];
