@@ -24,7 +24,7 @@
 
 ## Giới Thiệu
 
-Dự án này mô phỏng **thuật toán mã hóa khối AES-128** từ các phép toán cơ bản (không dùng thư viện) và minh họa **lỗ hổng Padding Oracle Attack** — một trong những lỗ hổng mật mã nổi tiếng nhất đã từng ảnh hưởng đến TLS, JWT, ASP.NET, Java Server Faces và nhiều hệ thống thực tế.
+Dự án này mô phỏng **thuật toán mã hóa khối AES-128** từ các phép toán cơ bản (không dùng thư viện) và minh họa **lỗ hổng Padding Oracle Attack** — một trong những lỗ hổng mật mã nổi tiếng nhất đã từng ảnh hưởng đến TLS, một số triển khai JWE/JWT dùng CBC/padding, ASP.NET, Java Server Faces và nhiều hệ thống thực tế.
 
 ### Mục Tiêu
 
@@ -39,7 +39,7 @@ Dự án này mô phỏng **thuật toán mã hóa khối AES-128** từ các ph
 ## Cấu Trúc Dự Án
 
 ```
-d:\aes\
+.
 ├── aes128.js                  # Lớp AES128: mã hóa + giải mã 1 khối
 ├── padding_oracle_demo.js     # Mô phỏng tấn công Padding Oracle (AES-CBC)
 ├── README.md                  # File này — tài liệu & đánh giá
@@ -292,7 +292,7 @@ flowchart TD
 | ShiftRows | 12 phép gán/vòng × 10 vòng | **O(1)** | Cố định 16 byte |
 | MixColumns | 4 cột × 4 phép nhân GF(2⁸) × 9 vòng | **O(1)** | 02·x tính trước, 03·x = 02·x ⊕ x |
 | AddRoundKey | 16 XOR/vòng × 11 vòng (vòng 0-10) | **O(1)** | |
-| **Tổng 1 khối** | | **O(1)** | ~300-400 thao tác cơ bản |
+| **Tổng 1 khối** | | **O(1)** | ~300-400 thao tác cơ bản (ước lượng thô, chưa tính chi tiết phép nhân GF) |
 
 ### GaloisMultiply — Nhân trong GF(2⁸)
 
@@ -300,7 +300,7 @@ flowchart TD
 |------------|------------|---------|
 | Xấu nhất (worst-case) | 8 | Khi b có bit 7 = 1 (b ≥ 128) |
 | Tốt nhất (best-case) | 1 | Khi b = 1 |
-| Trung bình (average) | ~4 | Phân bố đều, early-exit khi b = 0 |
+| Trung bình (average) | ~7.00 | B phụ thuộc vào byte dữ liệu; trung bình ~7 bit set/byte |
 | b = 0 | 0 | Thoát ngay, kết quả = 0 |
 
 ### AES-128-CBC (n khối)
@@ -316,7 +316,7 @@ flowchart TD
 | Mức độ | Số lần gọi Oracle | Công thức |
 |--------|-------------------|-----------|
 | 1 byte | 1 – 256 | `guess_count(byte)` |
-| 1 khối (16 byte) | 16 – 4096 | `Σ(1→256) × 16` |
+| 1 khối (16 byte) | 16 – 4096+ | `Σ(1→256) × 16` (4096 nếu không backtracking; code có backtracking nên worst-case > 4096, nhưng vẫn là hằng số/block) |
 | Trung bình 1 khối | ~2048 | Mỗi byte trung bình 128 lần |
 | **n khối** | **n × (256 × 16)** (tối đa) | **O(n)** — tuyến tính |
 | n khối (trung bình) | n × 2048 | Thực tế thấp hơn nhiều |
@@ -328,7 +328,7 @@ flowchart TD
 | AES-128 mã hóa 1 khối | O(1) | O(1) | 176 byte expanded key |
 | AES-128-CBC mã hóa n byte | O(n) | O(1) streaming (lý thuyết) / O(n) (code hiện tại) | ~n/16 khối |
 | Padding Oracle 1 block | O(1) | O(1) | Tối đa 4096 Oracle calls |
-| Padding Oracle n bytes | **O(n)** | O(1) | Tuyến tính! Không cần brute-force 2¹²⁸ |
+| Padding Oracle n bytes | **O(n)** | O(n) (code hiện tại) | Lưu `blocks`, `plaintextBlocks`, concat plaintext |
 
 > ⚠️ **Điểm quan trọng**: Độ phức tạp của tấn công là **O(n)** — TUYẾN TÍNH theo độ dài plaintext. Điều này có nghĩa là khóa AES-128 128-bit không bị phá vỡ (vẫn cần 2¹²⁸ để brute-force khóa), nhưng nếu có Oracle, kẻ tấn công khôi phục plaintext với chi phí **rất thấp**.
 
@@ -341,7 +341,7 @@ flowchart TD
 | Tiêu chí | Đánh giá |
 |----------|----------|
 | **Tính giáo dục** | ⭐⭐⭐⭐⭐ — Code thuần túy, không thư viện, comment tiếng Việt chi tiết |
-| **Tính trực quan** | ⭐⭐⭐⭐⭐ — `verbose=true` in ra ma trận State từng vòng, thấy rõ biến đổi |
+| **Tính trực quan** | ⭐⭐⭐⭐⭐ — `verbose=true` in log từng vòng và một số State tiêu biểu, thấy rõ biến đổi |
 | **Tính đầy đủ** | ⭐⭐⭐⭐⭐ — Có cả mã hóa + giải mã, tấn công từng byte → toàn bộ khối → nhiều khối |
 | **Tính chính xác** | ⭐⭐⭐⭐⭐ — So sánh với Node.js `crypto` cho kết quả khớp (nên bổ sung test vector chuẩn NIST để kiểm chứng đầy đủ) |
 
@@ -369,7 +369,7 @@ Từ mô phỏng này, chúng ta rút ra các bài học quan trọng:
 | # | Bài học | Giải thích |
 |---|---------|------------|
 | 1 | **Không để lộ thông tin lỗi** | Server không nên phân biệt "sai padding" vs "sai MAC" — luôn trả về lỗi chung |
-| 2 | **Dùng AEAD** | GCM, CCM dùng CTR mode (không padding) + authentication tag. Luôn **xác thực tag trước khi giải mã** để tránh oracle |
+| 2 | **Dùng AEAD** | GCM (CTR + GHASH), CCM (CTR + CBC-MAC). Không dùng padding. Luôn **xác thực tag trước khi giải mã**, không phát hành plaintext khi tag chưa hợp lệ |
 | 3 | **Encrypt-then-MAC** | Tính MAC trước khi kiểm tra padding — nếu MAC sai, không bao giờ động đến padding |
 | 4 | **Padding Oracle có thật** | Đã ảnh hưởng TLS (Lucky13, CVE-2013-0169), OpenSSL (CVE-2016-2107), ASP.NET (CVE-2010-3332), Java Server Faces |
 
