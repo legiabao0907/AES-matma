@@ -460,36 +460,240 @@ class AES128 {
     static getRoundKey(expandedKey, round) {
         return expandedKey.slice(round * 16, (round + 1) * 16);
     }
+
+    // =====================================================================
+    // PHẦN 5: PKCS#7 PADDING & MÃ HÓA / GIẢI MÃ ĐA KHỐI
+    // =====================================================================
+
+    /**
+     * PKCS#7 Padding — Thêm byte đệm vào dữ liệu.
+     * Mỗi byte đệm có giá trị = số byte cần đệm.
+     * Ví dụ: cần đệm 5 byte → thêm 5 byte 0x05.
+     * Nếu dữ liệu đã là bội của 16 → thêm hẳn 1 khối 16 byte 0x10.
+     *
+     * Độ phức tạp: O(n) — tạo buffer mới dài hơn
+     *
+     * @param {Uint8Array|Buffer|Array} data - Dữ liệu gốc
+     * @param {number} blockSize - Kích thước khối (mặc định 16)
+     * @returns {Buffer} Dữ liệu đã được đệm
+     */
+    static pkcs7Pad(data, blockSize = 16) {
+        const padLen = blockSize - (data.length % blockSize);
+        const padded = Buffer.alloc(data.length + padLen);
+        Buffer.from(data).copy(padded);
+        padded.fill(padLen, data.length);
+        return padded;
+    }
+
+    /**
+     * PKCS#7 Unpadding — Gỡ byte đệm sau khi giải mã.
+     * Kiểm tra tính hợp lệ của padding trước khi gỡ.
+     *
+     * Độ phức tạp: O(1) — kiểm tra tối đa 16 byte
+     *
+     * @param {Uint8Array|Buffer} data - Dữ liệu đã giải mã (còn padding)
+     * @returns {Buffer} Dữ liệu gốc (đã gỡ padding)
+     */
+    static pkcs7Unpad(data) {
+        const padLen = data[data.length - 1];
+        if (padLen < 1 || padLen > 16) {
+            throw new Error(`PKCS#7 Unpad: Padding khong hop le — byte cuoi = ${padLen}`);
+        }
+        // Kiểm tra tất cả byte đệm có cùng giá trị không
+        for (let i = data.length - padLen; i < data.length; i++) {
+            if (data[i] !== padLen) {
+                throw new Error(`PKCS#7 Unpad: Padding khong hop le tai vi tri ${i}: ${data[i]} != ${padLen}`);
+            }
+        }
+        return Buffer.from(data.slice(0, data.length - padLen));
+    }
+
+    /**
+     * Mã hóa dữ liệu độ dài tùy ý bằng AES-128 (ECB mode + PKCS#7).
+     *
+     * LUỒNG CHẠY:
+     *   1. PKCS#7 Pad dữ liệu → bội của 16 byte
+     *   2. Chia thành các khối 16 byte
+     *   3. Mã hóa từng khối bằng encryptBlock()
+     *   4. Ghép các khối mã hóa lại
+     *
+     * Độ phức tạp: O(n) — n/16 lần gọi encryptBlock (O(1) mỗi lần)
+     *
+     * @param {Uint8Array|Buffer|Array|string} plaintext - Dữ liệu cần mã hóa
+     * @param {Uint8Array|Array} key - 16 byte khóa
+     * @param {boolean} verbose - In chi tiết (mặc định false)
+     * @returns {Buffer} Dữ liệu đã mã hóa (độ dài là bội của 16)
+     */
+    static encrypt(plaintext, key, verbose = false) {
+        if (key.length !== 16) {
+            throw new Error("Key phai đung 16 bytes.");
+        }
+
+        // Chuyển string thành Buffer nếu cần
+        const data = typeof plaintext === 'string'
+            ? Buffer.from(plaintext, 'utf8')
+            : Buffer.from(plaintext);
+
+        // Bước 1: PKCS#7 Padding
+        const padded = this.pkcs7Pad(data);
+
+        if (verbose) {
+            console.log(`\n  [PKCS#7 Padding] ${data.length} byte → ${padded.length} byte`);
+            console.log(`  [So khoi] ${padded.length / 16} khoi`);
+        }
+
+        // Bước 2 & 3: Mã hóa từng khối
+        const numBlocks = padded.length / 16;
+        const result = Buffer.alloc(padded.length);
+
+        for (let i = 0; i < numBlocks; i++) {
+            const block = padded.slice(i * 16, (i + 1) * 16);
+            const encrypted = this.encryptBlock(block, key, false);
+            result.set(encrypted, i * 16);
+
+            if (verbose) {
+                console.log(`  [Khoi ${i + 1}/${numBlocks}] ${this.bytesToHex(block).substring(0, 35)}... → ${this.bytesToHex(encrypted).substring(0, 35)}...`);
+            }
+        }
+
+        if (verbose) {
+            console.log(`\n  [Ket qua ma hoa] ${this.bytesToHex(result)}`);
+        }
+
+        return result;
+    }
+
+    /**
+     * Giải mã dữ liệu đã mã hóa bằng AES-128 (ECB mode + PKCS#7).
+     *
+     * LUỒNG CHẠY:
+     *   1. Chia bản mã thành các khối 16 byte
+     *   2. Giải mã từng khối bằng decryptBlock()
+     *   3. Ghép lại → PKCS#7 Unpad
+     *
+     * Độ phức tạp: O(n) — n/16 lần gọi decryptBlock (O(1) mỗi lần)
+     *
+     * @param {Uint8Array|Buffer} ciphertext - Dữ liệu đã mã hóa
+     * @param {Uint8Array|Array} key - 16 byte khóa
+     * @param {boolean} verbose - In chi tiết (mặc định false)
+     * @returns {Buffer} Dữ liệu gốc (đã gỡ padding)
+     */
+    static decrypt(ciphertext, key, verbose = false) {
+        if (key.length !== 16) {
+            throw new Error("Key phai đung 16 bytes.");
+        }
+        if (ciphertext.length % 16 !== 0) {
+            throw new Error(`Ciphertext phai la boi cua 16 byte (nhan: ${ciphertext.length}).`);
+        }
+
+        const data = Buffer.from(ciphertext);
+        const numBlocks = data.length / 16;
+        const decrypted = Buffer.alloc(data.length);
+
+        for (let i = 0; i < numBlocks; i++) {
+            const block = data.slice(i * 16, (i + 1) * 16);
+            const decryptedBlock = this.decryptBlock(block, key, false);
+            decrypted.set(decryptedBlock, i * 16);
+
+            if (verbose) {
+                console.log(`  [Khoi ${i + 1}/${numBlocks}] ${this.bytesToHex(block).substring(0, 35)}... → ${this.bytesToHex(decryptedBlock).substring(0, 35)}...`);
+            }
+        }
+
+        // PKCS#7 Unpad
+        const unpadded = this.pkcs7Unpad(decrypted);
+
+        if (verbose) {
+            console.log(`\n  [PKCS#7 Unpad] ${decrypted.length} byte → ${unpadded.length} byte`);
+            console.log(`  [Ket qua giai ma] ${unpadded.toString('utf8')}`);
+        }
+
+        return unpadded;
+    }
 }
 
 // =====================================================================
-// DEMO: Chạy thử mã hóa & giải mã
+// DEMO: Chạy thử mã hóa & giải mã (chế độ tương tác)
 // =====================================================================
 if (require.main === module) {
-    console.log('====================================================');
-    console.log('|     MO PHONG AES-128 — MA HOA & GIAI MA          |');
-    console.log('|==================================================|');
-    console.log('|  Ban ro  : HUST_A+_Grade_12                     |');
-    console.log('|  Khoa    : mySecretKey!!16!                     |');
-    console.log('====================================================');
+    /**
+     * Chạy mã hóa + giải mã với plaintext và key cho trước.
+     * @param {string} plaintextStr - Chuỗi plaintext (phải đúng 16 ký tự)
+     * @param {string} keyStr - Chuỗi khóa (phải đúng 16 ký tự)
+     */
+    function runDemo(plaintextStr, keyStr) {
+        if (keyStr.length !== 16) {
+            console.error(`\n  [!] LOI: Key phai đung 16 ky tu (16 bytes).`);
+            console.error(`      Key: "${keyStr}" (${keyStr.length} ky tu → ${Buffer.from(keyStr, 'utf8').length} bytes)`);
+            process.exit(1);
+        }
 
-    const plaintext = Buffer.from('HUST_A+_Grade_12', 'utf8');  // 16 byte
-    const key       = Buffer.from('mySecretKey!!16!', 'utf8');    // 16 byte
+        const key   = Buffer.from(keyStr, 'utf8');
+        const input = Buffer.from(plaintextStr, 'utf8');
 
-    console.log('\n============== QUA TRINH MA HOA ==============');
-    const ciphertext = AES128.encryptBlock(plaintext, key, true);
+        console.log('====================================================');
+        console.log('|     MO PHONG AES-128 — MA HOA & GIAI MA          |');
+        console.log('|==================================================|');
+        console.log(`|  Ban ro  : ${plaintextStr.length <= 38 ? plaintextStr.padEnd(38) : plaintextStr.substring(0, 35) + '...'}|`);
+        console.log(`|  Do dai  : ${input.length} byte (${Math.ceil(input.length / 16)} khoi sau padding)     |`);
+        console.log(`|  Khoa    : ${keyStr.padEnd(38)}|`);
+        console.log('====================================================');
 
-    console.log('\n============== QUA TRINH GIAI MA ==============');
-    const decrypted = AES128.decryptBlock(ciphertext, key, true);
+        console.log('\n============== QUA TRINH MA HOA ==============');
+        const ciphertext = AES128.encrypt(plaintextStr, key, true);
 
-    console.log('\n============== KET QUA ==============');
-    console.log(`  Bản rõ gốc:       ${AES128.bytesToHex(plaintext)}  (${Buffer.from(plaintext).toString('utf8')})`);
-    console.log(`  Bản mã (hex):     ${AES128.bytesToHex(ciphertext)}`);
-    console.log(`  Giải mã được:     ${AES128.bytesToHex(decrypted)}  (${Buffer.from(decrypted).toString('utf8')})`);
-    
-    // Kiểm tra khớp
-    const match = Buffer.from(plaintext).equals(Buffer.from(decrypted));
-    console.log(`\n  ${match ? '[OK] Ma hoa & Giai ma KHOP chinh xac!' : '[LOI] Khong khop!'}`);
+        console.log('\n============== QUA TRINH GIAI MA ==============');
+        const decrypted = AES128.decrypt(ciphertext, key, true);
+
+        console.log('\n============== KET QUA ==============');
+        console.log(`  Ban ro goc:       ${plaintextStr}`);
+        console.log(`  Ban ma (hex):     ${AES128.bytesToHex(ciphertext)}`);
+        console.log(`  Giai ma đuoc:     ${decrypted.toString('utf8')}`);
+
+        const match = Buffer.from(input).equals(decrypted);
+        console.log(`\n  ${match ? '[OK] Ma hoa & Giai ma KHOP chinh xac!' : '[LOI] Khong khop!'}`);
+    }
+
+    const args = process.argv.slice(2);
+
+    if (args.length >= 2) {
+        // Nhận plaintext & key từ tham số dòng lệnh
+        //   node aes128.js "plaintext" "key"
+        runDemo(args[0], args[1]);
+    } else if (args.length === 1 && !args[0].startsWith('-')) {
+        // Chỉ có plaintext, dùng key mặc định
+        runDemo(args[0], 'mySecretKey!!16!');
+    } else {
+        // Chế độ tương tác: hỏi người dùng nhập plaintext & key
+        const readline = require('readline');
+        const rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout
+        });
+
+        console.log('+============================================================+');
+        console.log('|        MO PHONG AES-128 — MA HOA & GIAI MA KHOI           |');
+        console.log('|        HUST — Le Gia Bao & An                             |');
+        console.log('+============================================================+');
+        console.log('');
+        console.log('  SU DUNG:');
+        console.log('    node aes128.js "plaintext" "key"   → chay voi plaintext & key');
+        console.log('    node aes128.js "plaintext"          → chay voi key mac dinh');
+        console.log('    node aes128.js                      → che do tuong tac');
+        console.log('');
+        console.log('  LUU Y: Plaintext co the nhap do dai tuy y (PKCS#7 tu dong pad).');
+        console.log('         Key van phai đung 16 ky tu.');
+        console.log('');
+
+        rl.question('  Nhap plaintext (Enter = mac dinh "HUST_A+_Grade_12"): ', (plainAnswer) => {
+            const plaintext = plainAnswer.trim() || 'HUST_A+_Grade_12';
+            rl.question('  Nhap key (Enter = mac dinh "mySecretKey!!16!"): ', (keyAnswer) => {
+                rl.close();
+                const key = keyAnswer.trim() || 'mySecretKey!!16!';
+                runDemo(plaintext, key);
+            });
+        });
+    }
 }
 
 // =====================================================================
