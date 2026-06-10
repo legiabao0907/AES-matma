@@ -191,7 +191,7 @@ class VictimServer {
     }
 
     /**
-     * 🔴 LỖ HỔNG PADDING ORACLE:
+     * LO HONG PADDING ORACLE:
      * Server trả lời padding hợp lệ hay không.
      * 
      * TRONG THỰC TẾ: Server trả HTTP 200 (OK) hoặc HTTP 500 (Internal Server Error)
@@ -365,9 +365,9 @@ function paddingOracleAttack(oracle, iv, ciphertext, verbose = true) {
     const numBlocks = ciphertext.length / 16;
     const plaintextBlocks = [];
 
-    console.log(`\n  ▶ Bản mã có ${numBlocks} khối (${ciphertext.length} byte)`);
-    console.log(`  ▶ Mỗi khối cần cơ bản 16 × 256 = 4096 lần gọi Oracle (có thể hơn do backtracking)`);
-    console.log(`  ▶ Tổng cơ bản: ${numBlocks} × 4096 = ${numBlocks * 4096} lần gọi Oracle (chưa tính backtracking)\n`);
+    console.log(`\n  >> Ban ma co ${numBlocks} khoi (${ciphertext.length} byte)`);
+    console.log(`  >> Moi khoi can co ban 16 x 256 = 4096 lan goi Oracle (co the hon do backtracking)`);
+    console.log(`  >> Tong co ban: ${numBlocks} x 4096 = ${numBlocks * 4096} lan goi Oracle (chua tinh backtracking)\n`);
 
     // Tách thành từng khối
     const blocks = [];
@@ -383,10 +383,10 @@ function paddingOracleAttack(oracle, iv, ciphertext, verbose = true) {
         const targetBlock = blocks[blockIdx];
 
         if (verbose) {
-            console.log(`  ╔═══════════════ Khối ${blockIdx + 1}/${numBlocks} ═══════════════╗`);
-            console.log(`  ║  C_{${blockIdx}} (mục tiêu): ${bytesToHex(targetBlock)}`.padEnd(64) + '║');
-            console.log(`  ║  C_{${blockIdx - 1}} (trước đó): ${bytesToHex(prevBlock)}`.padEnd(64) + '║');
-            console.log(`  ╚══════════════════════════════════════════════════╝`);
+            console.log(`  +-------------------------------- Khoi ${blockIdx + 1}/${numBlocks} --------------------------------+`);
+            console.log(`  |  C_{${blockIdx}} (muc tieu): ${bytesToHex(targetBlock)}`.padEnd(64) + '|');
+            console.log(`  |  C_{${blockIdx - 1}} (truoc do): ${bytesToHex(prevBlock)}`.padEnd(64) + '|');
+            console.log(`  +------------------------------------------------------------------+`);
         }
 
         const startTime = Date.now();
@@ -398,7 +398,7 @@ function paddingOracleAttack(oracle, iv, ciphertext, verbose = true) {
         if (verbose) {
             const readable = result.plaintext.toString('utf8')
                 .replace(/[\x00-\x1f\x7f-\xff]/g, '.');
-            console.log(`  ✅ Khối ${blockIdx + 1} hoàn thành trong ${elapsed}ms`);
+            console.log(`  [OK] Khoi ${blockIdx + 1} hoan thanh trong ${elapsed}ms`);
             console.log(`     Plaintext (hex): ${bytesToHex(result.plaintext)}`);
             console.log(`     Plaintext (raw): ${readable}\n`);
         }
@@ -409,7 +409,7 @@ function paddingOracleAttack(oracle, iv, ciphertext, verbose = true) {
     const unpadded = pkcs7Unpad(rawPlaintext);
 
     if (verbose) {
-        console.log(`  ════════════════ KẾT QUẢ CUỐI CÙNG ════════════════`);
+        console.log(`  ================ KET QUA CUOI CUNG ================`);
         console.log(`  Plaintext (còn padding): ${bytesToHex(rawPlaintext)}`);
         console.log(`  Plaintext (đã unpad)   : ${bytesToHex(unpadded)}`);
     }
@@ -422,9 +422,9 @@ function paddingOracleAttack(oracle, iv, ciphertext, verbose = true) {
 // =====================================================================
 
 function runComparisonDemo() {
-    console.log('╔══════════════════════════════════════════════════════╗');
-    console.log('║   SO SÁNH: AES128 (tự cài) vs Node.js crypto       ║');
-    console.log('╚══════════════════════════════════════════════════════╝\n');
+    console.log('+====================================================+');
+    console.log('|   SO SANH: AES128 (tu cai) vs Node.js crypto      |');
+    console.log('+====================================================+\n');
 
     const plaintext = Buffer.from('HUST_A+_Grade_12', 'utf8');
     const key       = Buffer.from('mySecretKey!!16!', 'utf8');
@@ -436,17 +436,17 @@ function runComparisonDemo() {
 
     // Mã hóa bằng AES128 tự cài
     const ourCipher = aes128cbcEncrypt(plaintext, key, iv);
-    console.log(`  🔐 AES128 tự cài → Ciphertext: ${bytesToHex(ourCipher)} (${ourCipher.length} byte)`);
+    console.log(`  [AES128] Ma hoa → Ciphertext: ${bytesToHex(ourCipher)} (${ourCipher.length} byte)`);
 
     // Mã hóa bằng Node.js crypto
     const cipher = crypto.createCipheriv('aes-128-cbc', key, iv);
     let nodeCipher = cipher.update(plaintext);
     nodeCipher = Buffer.concat([nodeCipher, cipher.final()]);
-    console.log(`  🔐 Node.js crypto → Ciphertext: ${bytesToHex(nodeCipher)} (${nodeCipher.length} byte)`);
+    console.log(`  [Node] Ma hoa → Ciphertext: ${bytesToHex(nodeCipher)} (${nodeCipher.length} byte)`);
 
     // So sánh
     const match = ourCipher.equals(nodeCipher);
-    console.log(`\n  ${match ? '✅ KẾT QUẢ KHỚP NHAU!' : '⚠️  Kết quả KHÁC NHAU (có thể do PKCS#7 khối phụ)'}`);
+    console.log(`\n  ${match ? '[OK] KET QUA KHOP NHAU!' : '[!!] Ket qua KHAC NHAU (co the do PKCS#7 khoi phu)'}`);
     if (!match) {
         console.log('     (Lý do: plaintext 16 byte + PKCS#7 → thêm 1 khối 0x10.');
         console.log('      Node.js crypto tự động thêm khối này, AES128 tự cài cũng vậy.)');
@@ -454,8 +454,8 @@ function runComparisonDemo() {
 
     // Giải mã ngược lại để kiểm tra
     const decrypted = aes128cbcDecrypt(ourCipher, key, iv);
-    console.log(`  🔓 Giải mã ngược → "${decrypted.toString('utf8')}"`);
-    console.log(`  ${decrypted.toString('utf8') === 'HUST_A+_Grade_12' ? '✅ Giải mã thành công!' : '❌ Lỗi giải mã!'}`);
+    console.log(`  [Giai ma] Giai ma nguoc → "${decrypted.toString('utf8')}"`);
+    console.log(`  ${decrypted.toString('utf8') === 'HUST_A+_Grade_12' ? '[OK] Giai ma thanh cong!' : '[LOI] Loi giai ma!'}`);
 }
 
 // =====================================================================
@@ -464,10 +464,10 @@ function runComparisonDemo() {
 
 function runAttackDemo() {
     console.log('\n');
-    console.log('╔══════════════════════════════════════════════════════╗');
-    console.log('║   TẤN CÔNG PADDING ORACLE — KHÔI PHỤC TOÀN BỘ      ║');
-    console.log('║   PLAINTEXT MÀ KHÔNG CẦN BIẾT KHÓA BÍ MẬT          ║');
-    console.log('╚══════════════════════════════════════════════════════╝\n');
+    console.log('+====================================================+');
+    console.log('|   TAN CONG PADDING ORACLE — KHOI PHUC TOAN BO     |');
+    console.log('|   PLAINTEXT MA KHONG CAN BIET KHOA BI MAT         |');
+    console.log('+====================================================+\n');
 
     // 1. Khởi tạo server
     const server = new VictimServer();
@@ -484,9 +484,9 @@ function runAttackDemo() {
         const secretMessage = messages[msgIdx];
         const { iv, ciphertext } = server.getEncryptedSecret(secretMessage);
 
-        console.log(`\n${'═'.repeat(55)}`);
+        console.log(`\n${'='.repeat(55)}`);
         console.log(`  THỬ NGHIỆM ${msgIdx + 1}: Tin nhắn "${secretMessage}" (${secretMessage.length} ký tự)`);
-        console.log(`${'═'.repeat(55)}`);
+        console.log(`${'='.repeat(55)}`);
         console.log(`[NGHE LÉN] IV:         ${bytesToHex(iv)}`);
         console.log(`[NGHE LÉN] Ciphertext: ${bytesToHex(ciphertext)} (${ciphertext.length} byte, ${ciphertext.length / 16} khối)`);
         console.log(`[MỤC TIÊU] Khôi phục plaintext mà KHÔNG biết khóa.\n`);
@@ -505,40 +505,153 @@ function runAttackDemo() {
         const crackedStr = crackedPlaintext.toString('utf8');
         const success = crackedStr === secretMessage;
 
-        console.log(`\n  ╔════════════════════════════════════════════════╗`);
-        console.log(`  ║  ${success ? '✅ TẤN CÔNG THÀNH CÔNG!' : '❌ TẤN CÔNG THẤT BẠI'}                         ║`);
-        console.log(`  ╠════════════════════════════════════════════════╣`);
-        console.log(`  ║  Tin nhắn gốc : ${secretMessage.padEnd(32)}║`);
-        console.log(`  ║  Khôi phục    : ${crackedStr.padEnd(32)}║`);
-        console.log(`  ║  Thời gian    : ${String(totalTime + 'ms').padEnd(32)}║`);
-        console.log(`  ╚════════════════════════════════════════════════╝`);
+        console.log(`\n  +----------------------------------------------------+`);
+        console.log(`  |  ${success ? '[OK] TAN CONG THANH CONG!' : '[LOI] TAN CONG THAT BAI'}                         |`);
+        console.log(`  +----------------------------------------------------+`);
+        console.log(`  |  Tin nhan goc : ${secretMessage.padEnd(32)}|`);
+        console.log(`  |  Khoi phuc    : ${crackedStr.padEnd(32)}|`);
+        console.log(`  |  Thoi gian    : ${String(totalTime + 'ms').padEnd(32)}|`);
+        console.log(`  +----------------------------------------------------+`);
     }
 }
 
 // =====================================================================
-// PHẦN 7: CHẠY TẤT CẢ DEMO
+// PHAN 7: CHE DO CHAY — TUONG TAC NGUOI DUNG
 // =====================================================================
 
-console.log('╔══════════════════════════════════════════════════════════╗');
-console.log('║                                                        ║');
-console.log('║   🎓 ĐỒ ÁN MÔ PHỎNG AES-128 & PADDING ORACLE ATTACK  ║');
-console.log('║   HUST — Lê Gia Bảo & An                              ║');
-console.log('║                                                        ║');
-console.log('╚══════════════════════════════════════════════════════════╝');
+/**
+ * Ham chay che do tuong tac: nhan input tu nguoi dung,
+ * ma hoa, hien thi ciphertext, roi tan cong Padding Oracle de khoi phuc.
+ * 
+ * Luong chay Input/Output:
+ *   INPUT:  Nguoi dung nhap plaintext (va tuy chon: key, IV)
+ *   OUTPUT: Ciphertext (hex) → Padding Oracle Attack → Plaintext khoi phuc
+ */
+function runInteractiveMode(userMessage) {
+    console.log('+============================================================+');
+    console.log('|                                                           |');
+    console.log('|   DO AN MO PHONG AES-128 & PADDING ORACLE ATTACK   |');
+    console.log('|   HUST — Le Gia Bao & An                                 |');
+    console.log('|                                                           |');
+    console.log('+============================================================+');
+    console.log('');
+    console.log('  [CHE DO TUONG TAC] Nhan plaintext tu nguoi dung');
+    console.log('');
 
-// Demo 1: So sánh AES128 tự cài với Node.js crypto
-runComparisonDemo();
+    const secretMessage = userMessage || 'HUST_A+_Grade_12';
+    
+    // Khoi tao server voi khoa bi mat ngau nhien
+    const server = new VictimServer();
+    console.log(`[SERVER]  Khoi tao voi khoa bi mat NGAU NHIEN.`);
+    console.log(`[SERVER]  Khoa bi mat: ${bytesToHex(server.secretKey)} (Hacker KHONG BIET)`);
+    console.log(`[INPUT]   Plaintext goc: "${secretMessage}" (${secretMessage.length} ky tu)\n`);
 
-// Demo 2: Tấn công Padding Oracle
-runAttackDemo();
+    // Ma hoa tin nhan
+    const { iv, ciphertext } = server.getEncryptedSecret(secretMessage);
+    console.log(`[MA HOA]  IV:         ${bytesToHex(iv)}`);
+    console.log(`[MA HOA]  Ciphertext: ${bytesToHex(ciphertext)} (${ciphertext.length} byte, ${ciphertext.length / 16} khoi)`);
+    console.log(`[MA HOA]  Thuat toan: AES-128-CBC + PKCS#7 Padding\n`);
 
-console.log('\n╔══════════════════════════════════════════════════════════╗');
-console.log('║  🏁 KẾT THÚC MÔ PHỎNG                                  ║');
-console.log('╚══════════════════════════════════════════════════════════╝');
-console.log('\n📌 GHI CHÚ BẢO MẬT:');
-console.log('  - Đây là mã nguồn GIÁO DỤC, không dùng cho mục đích thực tế.');
-console.log('  - Trong production, dùng Node.js crypto hoặc Web Crypto API.');
-console.log('  - Padding Oracle là lỗ hổng THỰC TẾ, đã từng ảnh hưởng đến');
-console.log('    TLS, JWT, ASP.NET, Java Server Faces, và nhiều framework khác.');
-console.log('  - Cách phòng chống: Dùng chế độ AEAD như AES-GCM/ChaCha20-Poly1305,');
-console.log('    hoặc Encrypt-then-MAC (kiểm tra tag/MAC trước khi xử lý padding),');
+    // Tan cong Padding Oracle
+    console.log('[TAN CONG] Bat dau Padding Oracle Attack...\n');
+    const startTime = Date.now();
+    const crackedPlaintext = paddingOracleAttack(
+        server.checkPadding.bind(server),
+        iv,
+        ciphertext,
+        true
+    );
+    const totalTime = Date.now() - startTime;
+
+    // Ket qua
+    const crackedStr = crackedPlaintext.toString('utf8');
+    const success = crackedStr === secretMessage;
+
+    console.log(`\n  +----------------------------------------------------+`);
+    console.log(`  |  ${success ? '[OK] TAN CONG THANH CONG!' : '[LOI] TAN CONG THAT BAI'}                         |`);
+    console.log(`  +----------------------------------------------------+`);
+    console.log(`  |  Tin nhan goc : ${secretMessage.padEnd(32)}|`);
+    console.log(`  |  Khoi phuc    : ${crackedStr.padEnd(32)}|`);
+    console.log(`  |  Thoi gian    : ${String(totalTime + 'ms').padEnd(32)}|`);
+    console.log(`  +----------------------------------------------------+`);
+
+    console.log('\n+============================================================+');
+    console.log('|  KET THUC MO PHONG                                  |');
+    console.log('+============================================================+');
+    console.log('\nGHI CHU BAO MAT:');
+    console.log('  - Day la ma nguon GIAO DUC, khong dung cho muc dich thuc te.');
+    console.log('  - Trong production, dung Node.js crypto hoac Web Crypto API.');
+    console.log('  - Padding Oracle la lo hong THUC TE, da tung anh huong den');
+    console.log('    TLS, JWT, ASP.NET, Java Server Faces, va nhieu framework khac.');
+    console.log('  - Cach phong chong: Dung che do AEAD nhu AES-GCM/ChaCha20-Poly1305,');
+    console.log('    hoac Encrypt-then-MAC (kiem tra tag/MAC truoc khi xu ly padding),');
+    console.log('    hoac dung lop ma hoa opaque nhu libsodium/NaCl.');
+}
+
+/**
+ * Chay demo so sanh AES128 tu cai voi Node.js crypto.
+ */
+function runAllDemos() {
+    console.log('+============================================================+');
+    console.log('|                                                           |');
+    console.log('|   DO AN MO PHONG AES-128 & PADDING ORACLE ATTACK   |');
+    console.log('|   HUST — Le Gia Bao & An                                 |');
+    console.log('|                                                           |');
+    console.log('+============================================================+');
+
+    // Demo 1: So sanh AES128 tu cai voi Node.js crypto
+    runComparisonDemo();
+
+    // Demo 2: Tan cong Padding Oracle
+    runAttackDemo();
+
+    console.log('\n+============================================================+');
+    console.log('|  KET THUC MO PHONG                                  |');
+    console.log('+============================================================+');
+    console.log('\nGHI CHU BAO MAT:');
+    console.log('  - Day la ma nguon GIAO DUC, khong dung cho muc dich thuc te.');
+    console.log('  - Trong production, dung Node.js crypto hoac Web Crypto API.');
+    console.log('  - Padding Oracle la lo hong THUC TE, da tung anh huong den');
+    console.log('    TLS, JWT, ASP.NET, Java Server Faces, va nhieu framework khac.');
+    console.log('  - Cach phong chong: Dung che do AEAD nhu AES-GCM/ChaCha20-Poly1305,');
+    console.log('    hoac Encrypt-then-MAC (kiem tra tag/MAC truoc khi xu ly padding),');
+    console.log('    hoac dung lop ma hoa opaque nhu libsodium/NaCl.');
+}
+
+// =====================================================================
+// XU LY THAM SO DONG LENH & KHOI CHAY
+// =====================================================================
+
+const args = process.argv.slice(2);
+
+if (args.includes('--demo') || args.includes('-d')) {
+    // Che do demo goc
+    runAllDemos();
+} else if (args.length > 0 && !args[0].startsWith('-')) {
+    // Nhan plaintext tu tham so dong lenh
+    runInteractiveMode(args[0]);
+} else {
+    // Che do tuong tac: hoi nguoi dung nhap plaintext
+    const readline = require('readline');
+    const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+    });
+
+    console.log('+============================================================+');
+    console.log('|   DO AN MO PHONG AES-128 & PADDING ORACLE ATTACK   |');
+    console.log('|   HUST — Le Gia Bao & An                                 |');
+    console.log('+============================================================+');
+    console.log('');
+    console.log('  SU DUNG:');
+    console.log('    node padding_oracle_demo.js "message"   → chay voi message');
+    console.log('    node padding_oracle_demo.js --demo       → chay demo goc');
+    console.log('    node padding_oracle_demo.js              → che do tuong tac');
+    console.log('');
+
+    rl.question('  Nhap plaintext (Enter = mac dinh "HUST_A+_Grade_12"): ', (answer) => {
+        rl.close();
+        const message = answer.trim() || 'HUST_A+_Grade_12';
+        runInteractiveMode(message);
+    });
+}

@@ -466,30 +466,30 @@ class AES128 {
 // DEMO: Chạy thử mã hóa & giải mã
 // =====================================================================
 if (require.main === module) {
-    console.log('╔══════════════════════════════════════════════════╗');
-    console.log('║     MÔ PHỎNG AES-128 — MÃ HÓA & GIẢI MÃ         ║');
-    console.log('╠══════════════════════════════════════════════════╣');
-    console.log('║  Bản rõ  : HUST_A+_Grade_12                     ║');
-    console.log('║  Khóa    : mySecretKey!!16!                     ║');
-    console.log('╚══════════════════════════════════════════════════╝');
+    console.log('====================================================');
+    console.log('|     MO PHONG AES-128 — MA HOA & GIAI MA          |');
+    console.log('|==================================================|');
+    console.log('|  Ban ro  : HUST_A+_Grade_12                     |');
+    console.log('|  Khoa    : mySecretKey!!16!                     |');
+    console.log('====================================================');
 
     const plaintext = Buffer.from('HUST_A+_Grade_12', 'utf8');  // 16 byte
     const key       = Buffer.from('mySecretKey!!16!', 'utf8');    // 16 byte
 
-    console.log('\n══════════════ QUÁ TRÌNH MÃ HÓA ══════════════');
+    console.log('\n============== QUA TRINH MA HOA ==============');
     const ciphertext = AES128.encryptBlock(plaintext, key, true);
 
-    console.log('\n══════════════ QUÁ TRÌNH GIẢI MÃ ══════════════');
+    console.log('\n============== QUA TRINH GIAI MA ==============');
     const decrypted = AES128.decryptBlock(ciphertext, key, true);
 
-    console.log('\n══════════════ KẾT QUẢ ══════════════');
+    console.log('\n============== KET QUA ==============');
     console.log(`  Bản rõ gốc:       ${AES128.bytesToHex(plaintext)}  (${Buffer.from(plaintext).toString('utf8')})`);
     console.log(`  Bản mã (hex):     ${AES128.bytesToHex(ciphertext)}`);
     console.log(`  Giải mã được:     ${AES128.bytesToHex(decrypted)}  (${Buffer.from(decrypted).toString('utf8')})`);
     
     // Kiểm tra khớp
     const match = Buffer.from(plaintext).equals(Buffer.from(decrypted));
-    console.log(`\n  ${match ? '✅ Mã hóa & Giải mã KHỚP chính xác!' : '❌ LỖI: Không khớp!'}`);
+    console.log(`\n  ${match ? '[OK] Ma hoa & Giai ma KHOP chinh xac!' : '[LOI] Khong khop!'}`);
 }
 
 // =====================================================================

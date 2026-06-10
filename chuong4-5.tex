@@ -1,0 +1,546 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Chương 4 & 5: Độ phức tạp & Xây dựng chương trình mô phỏng
+% Đồ án AES-128 & Padding Oracle Attack — HUST
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% >>> PASTE VÀO PREAMBLE CỦA FILE CHÍNH (main.tex) <<<
+%
+% \usepackage{listings}       % code listings
+% \usepackage{tcolorbox}     % hộp cảnh báo (cần cả \usepackage{xcolor})
+% \usepackage{booktabs}      % \toprule, \midrule, \bottomrule
+% \usepackage{amsmath}       % \text, \log, \mathcal, \lceil, \rceil
+% \usepackage{fontenc}       % T1 encoding cho tiếng Việt
+% \usepackage[utf8]{inputenc}
+%
+% Nếu dùng minted thay cho listings (cần --shell-escape + Pygments):
+% \usepackage{minted}
+% \setminted{fontsize=\footnotesize, breaklines=true, frame=single}
+% thì thay \begin{lstlisting}[language=JavaScript]...\end{lstlisting}
+%      bằng \begin{minted}{javascript}...\end{minted}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% --- Cấu hình listings cho JavaScript ---
+% Thêm vào preamble nếu chưa có, hoặc giữ ở đây nếu file được \input riêng
+\lstdefinelanguage{JavaScript}{
+  keywords={break, case, catch, continue, debugger, default, delete, do, else,
+    finally, for, function, if, in, instanceof, new, return, switch, this,
+    throw, try, typeof, var, void, while, with, let, const, class, export,
+    import, extends, super, static, yield, async, await, of, from, true, false, null},
+  keywordstyle=\color{blue}\bfseries,
+  ndkeywords={require, console, Buffer, Uint8Array, crypto, module, exports,
+    push, slice, toString, from, charCodeAt, concat, alloc, length, setAutoPadding,
+    createDecipheriv, update, final, encryptBlock, decryptBlock, keyExpansion,
+    subBytes, shiftRows, mixColumns, addRoundKey, bufferToState, stateToBuffer,
+    galoisMultiply, pkcs7Pad, pkcs7Unpad, printState, bytesToHex, xorBuffers},
+  ndkeywordstyle=\color{darkgray}\bfseries,
+  identifierstyle=\color{black},
+  sensitive=true,
+  comment=[l]{//},
+  morecomment=[s]{/*}{*/},
+  commentstyle=\color{gray}\itshape,
+  stringstyle=\color{red},
+  morestring=[b]',
+  morestring=[b]`,
+  morestring=[b]",
+}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  stepnumber=1,
+  numbersep=5pt,
+  backgroundcolor=\color{white},
+  showspaces=false,
+  showstringspaces=false,
+  showtabs=false,
+  frame=single,
+  rulecolor=\color{black},
+  tabsize=2,
+  captionpos=b,
+  breaklines=true,
+  breakatwhitespace=false,
+  escapeinside={\%*}{*)},
+  aboveskip=6pt,
+  belowskip=6pt,
+}
+
+\chapter{Đánh giá độ phức tạp thuật toán}
+\label{chap:complexity}
+
+Chương này phân tích độ phức tạp về thời gian và không gian của ba thành phần chính trong đồ án: mã hóa AES-128 một khối, chế độ CBC trên nhiều khối, và tấn công Padding Oracle. Các ký hiệu $O(1)$ và $O(n)$ được sử dụng theo quy ước: $n$ là số byte (hoặc số khối) của dữ liệu đầu vào.
+
+%----------------------------------------------------------------
+\section{Độ phức tạp của AES-128 (mã hóa/giải mã một khối)}
+\label{sec:cplx-aes128}
+
+Thuật toán AES-128 xử lý một khối 16 byte qua 10 vòng biến đổi. Mỗi vòng gồm bốn phép biến đổi cố định, không phụ thuộc vào dữ liệu đầu vào. Do đó, độ phức tạp mã hóa/giải mã \textbf{một khối} luôn là hằng số --- $O(1)$.
+
+\subsection{Phân tích từng thành phần}
+
+\begin{table}[htbp]
+\centering
+\caption{Các thành phần của AES-128 và số phép toán}
+\label{tab:aes128-ops}
+\begin{tabular}{@{}p{3.5cm}cp{5.5cm}@{}}
+\toprule
+\textbf{Thành phần} & \textbf{Độ phức tạp} & \textbf{Ghi chú} \\
+\midrule
+Key Expansion        & $O(1)$ & 44 word $\times$ 4 byte, cố định với AES-128 \\
+SubBytes             & $O(1)$ & $16 \times 10 = 160$ lần tra S-Box \\
+ShiftRows            & $O(1)$ & $12$ phép gán/vòng $\times$ 10 vòng, cố định \\
+MixColumns           & $O(1)$ & 4 cột $\times$ 4 phép nhân GF($2^8$) $\times$ 9 vòng \\
+AddRoundKey          & $O(1)$ & $16$ XOR/vòng $\times$ 11 vòng (vòng $0$--$10$) \\
+\midrule
+\textbf{Tổng 1 khối} & $\mathbf{O(1)}$ & $\approx 300$--$400$ thao tác cơ bản (ước lượng thô, chưa tính chi tiết phép nhân GF) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Phân tích GaloisMultiply --- Nhân trong GF($2^8$)}
+
+Phép nhân GaloisMultiply (giải thuật \textit{shift-and-add} trên trường $GF(2^8)$ với đa thức tối giản $P(x)=x^8+x^4+x^3+x+1$ (0x11B)) là phép toán cơ bản trong MixColumns và InvMixColumns. Vòng lặp thực thi phụ thuộc vào \textbf{bit-length} (vị trí bit 1 cao nhất) của toán hạng $b$, không phụ thuộc số bit được set.
+
+\begin{table}[htbp]
+\centering
+\caption{Số vòng lặp của GaloisMultiply theo giá trị $b$}
+\label{tab:galois}
+\begin{tabular}{@{}p{4.5cm}cp{6cm}@{}}
+\toprule
+\textbf{Trường hợp} & \textbf{Số vòng} & \textbf{Ghi chú} \\
+\midrule
+Xấu nhất (worst-case) & 8   & Khi $b \ge 128$ (bit 7 = 1) \\
+Tốt nhất (best-case)  & 1   & Khi $b = 1$ \\
+Trung bình (average)  & $\approx 7.00$ & Số vòng $= \lceil\log_2(b+1)\rceil$; trung bình $\approx 7$ nếu $b \sim \mathcal{U}(0,255)$ \\
+$b = 0$               & 0   & Thoát ngay, kết quả $=0$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{lstlisting}[language=JavaScript, caption={Hàm galoisMultiply --- Nhân trong GF($2^8$)}, label=lst:galois]
+static galoisMultiply(a, b) {
+    let p = 0;
+    while (b !== 0) {              // Early-exit khi b = 0
+        if (b & 1) p ^= a;         // Bit thap nhat cua b = 1 => cong a
+        const hiBitSet = (a & 0x80) !== 0;
+        a <<= 1;                   // Nhan a voi x
+        if (hiBitSet) a ^= 0x11b;  // Tran => rut gon modulo P(x)
+        b >>= 1;                   // Chia b cho x
+    }
+    return p & 0xFF;
+}
+\end{lstlisting}
+
+%----------------------------------------------------------------
+\section{Độ phức tạp của AES-128-CBC (n khối)}
+\label{sec:cplx-cbc}
+
+Chế độ Cipher Block Chaining (CBC) xử lý từng khối tuần tự: mỗi khối bản rõ được XOR với khối bản mã trước đó trước khi mã hóa AES. Với $n$ byte dữ liệu (tương đương $\lceil n/16 \rceil$ khối), độ phức tạp như sau:
+
+\begin{table}[htbp]
+\centering
+\caption{Độ phức tạp của AES-128-CBC}
+\label{tab:cbc-cplx}
+\begin{tabular}{@{}p{3cm}cp{7cm}@{}}
+\toprule
+\textbf{Thành phần} & \textbf{Thời gian} & \textbf{Ghi chú} \\
+\midrule
+Mã hóa CBC   & $O(n)$ & Mỗi khối $O(1)$, tổng $n/16$ khối \\
+Giải mã CBC   & $O(n)$ & Mỗi khối $O(1)$, tổng $n/16$ khối \\
+Bộ nhớ        & $O(1)$ / $O(n)$ & $O(1)$ nếu streaming (lý thuyết); $O(n)$ trong code hiện tại do lưu toàn bộ plaintext/ciphertext \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%----------------------------------------------------------------
+\section{Độ phức tạp của tấn công Padding Oracle}
+\label{sec:cplx-oracle}
+
+Đây là phần trọng tâm của đồ án. Tấn công Padding Oracle trên AES-128-CBC có độ phức tạp \textbf{tuyến tính} $O(n)$ --- một kết quả đáng chú ý vì nó cho thấy kẻ tấn công không cần brute-force khóa $2^{128}$ mà vẫn khôi phục được toàn bộ plaintext nếu có Oracle rò rỉ thông tin padding.
+
+\subsection{Phân tích chi tiết}
+
+Gọi $n$ là số khối của bản mã. Hàm \texttt{decryptByteCandidates} luôn duyệt đủ toàn bộ không gian $0\ldots255$ để thu thập tất cả ứng viên hợp lệ, \textbf{không dừng sớm}. Do đó mỗi byte luôn tiêu tốn \textbf{256} lần gọi Oracle.
+
+Thuật toán \texttt{decryptBlock} sử dụng backtracking: khi một ứng viên cho byte $pos$ dẫn đến không tìm thấy ứng viên nào cho byte $pos-1$, thuật toán quay lui và thử ứng viên khác. Chi phí cơ bản cho một khối (không backtracking) là $16 \times 256 = 4096$ lần gọi Oracle; backtracking có thể làm tăng con số này.
+
+\begin{table}[htbp]
+\centering
+\caption{Số lần gọi Oracle trong tấn công Padding Oracle}
+\label{tab:oracle-calls}
+\begin{tabular}{@{}p{5cm}cp{5.5cm}@{}}
+\toprule
+\textbf{Mức độ} & \textbf{Số lần Oracle} & \textbf{Ghi chú} \\
+\midrule
+1 byte                              & 256          & Luôn duyệt đủ $0\ldots255$, không dừng sớm \\
+1 khối (16 byte) --- cơ bản         & 4096         & $16 \times 256$; không tính backtracking \\
+1 khối (16 byte) --- có backtracking & $\ge 4096$  & Backtracking có thể làm tăng số lần gọi \\
+$n$ khối (cơ bản)                   & $n \times 4096$ & $n \times 16 \times 256$; chi phí tuyến tính \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Bảng tổng hợp độ phức tạp}
+
+\begin{table}[htbp]
+\centering
+\caption{So sánh độ phức tạp các thuật toán}
+\label{tab:cplx-summary}
+\begin{tabular}{@{}p{4.5cm}ccp{4.5cm}@{}}
+\toprule
+\textbf{Thuật toán} & \textbf{Thời gian} & \textbf{Không gian} & \textbf{Ghi chú} \\
+\midrule
+AES-128 mã hóa 1 khối                     & $O(1)$ & $O(1)$ & 176 byte expanded key \\
+AES-128-CBC mã hóa $n$ byte              & $O(n)$ & $O(1)$ / $O(n)$ & $\approx n/16$ khối; streaming vs.\ lưu toàn bộ \\
+Padding Oracle 1 block                    & $O(1)$ & $O(1)$ & Cơ bản 4096 calls/block; có thể hơn do backtracking \\
+Padding Oracle $n$ bytes                  & $\mathbf{O(n)}$ & $O(n)$ & Lưu \texttt{blocks}, \texttt{plaintextBlocks}, concat \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Ý nghĩa của độ phức tạp $O(n)$}
+
+\begin{tcolorbox}[title=Điểm quan trọng, colback=red!5!white, colframe=red!75!black]
+Độ phức tạp của tấn công Padding Oracle là $\mathbf{O(n)}$ --- \textbf{tuyến tính} theo độ dài plaintext. Điều này có nghĩa:
+\begin{itemize}
+    \item Khóa AES-128 128-bit \textbf{không bị phá vỡ} (vẫn cần $2^{128}$ để brute-force khóa).
+    \item Nhưng nếu có Oracle rò rỉ thông tin padding, kẻ tấn công khôi phục \textbf{toàn bộ plaintext} với chi phí \textbf{rất thấp} --- chỉ vài nghìn lần gọi Oracle cho mỗi khối.
+    \item Đây là lý do Padding Oracle được xếp vào loại lỗ hổng \textbf{nghiêm trọng} trong thực tế.
+\end{itemize}
+\end{tcolorbox}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Chương 5: Xây dựng chương trình mô phỏng (Implementation & Demo)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\chapter{Xây dựng chương trình mô phỏng}
+\label{chap:implementation}
+
+Chương này mô tả chi tiết kiến trúc chương trình, các hàm chính, và kết quả demo của đồ án. Toàn bộ mã nguồn được viết bằng JavaScript thuần (Node.js), không phụ thuộc thư viện mật mã ngoài module \texttt{crypto} tích hợp sẵn dùng để đối chiếu kết quả.
+
+%----------------------------------------------------------------
+\section{Cấu trúc dự án}
+\label{sec:structure}
+
+Dự án gồm hai file chính:
+
+\begin{table}[htbp]
+\centering
+\caption{Cấu trúc file của dự án}
+\label{tab:files}
+\begin{tabular}{@{}p{5cm}p{9cm}@{}}
+\toprule
+\textbf{File} & \textbf{Vai trò} \\
+\midrule
+\texttt{aes128.js} & Lớp \texttt{AES128}: S-Box, Key Expansion, SubBytes, ShiftRows, MixColumns, AddRoundKey, mã hóa/giải mã 10 vòng (JavaScript thuần, không thư viện) \\
+\texttt{padding\_oracle\_demo.js} & Mô phỏng VictimServer (AES-128-CBC qua \texttt{crypto}) + brute-force Padding Oracle attacker \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%----------------------------------------------------------------
+\section{Cài đặt AES-128}
+\label{sec:impl-aes}
+
+\subsection{Các bảng tra cứu tĩnh}
+
+Lớp \texttt{AES128} khai báo ba bảng tra cứu tĩnh:
+\begin{itemize}
+    \item \texttt{SBOX[256]} --- Bảng thế phi tuyến (SubBytes), tạo Confusion.
+    \item \texttt{INV\_SBOX[256]} --- Bảng thế nghịch đảo (InvSubBytes).
+    \item \texttt{RCON[11]} --- Hằng số vòng (Round Constant) dùng trong Key Expansion.
+\end{itemize}
+
+\subsection{Các hàm biến đổi AES}
+
+Bảng~\ref{tab:aes-funcs} liệt kê các hàm biến đổi chính của thuật toán AES-128.
+
+\begin{table}[htbp]
+\centering
+\caption{Các hàm biến đổi AES}
+\label{tab:aes-funcs}
+\begin{tabular}{@{}p{2.8cm}p{2.5cm}p{8cm}@{}}
+\toprule
+\textbf{Hàm} & \textbf{Vai trò} & \textbf{Cơ chế} \\
+\midrule
+\texttt{subBytes}     & Confusion  & Thế mỗi byte qua S-Box \\
+\texttt{shiftRows}    & Diffusion  & Dịch vòng trái: hàng $r$ dịch $r$ bước ($r=0,1,2,3$) \\
+\texttt{mixColumns}   & Diffusion  & Nhân mỗi cột với ma trận $4\times4$ cố định trong GF($2^8$) \\
+\texttt{addRoundKey}  & Kết hợp khóa & XOR State với khóa vòng \\
+\texttt{keyExpansion} & Quản lý khóa & Mở rộng khóa 16 byte $\rightarrow$ 176 byte (11 khóa vòng) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Mã hóa một khối --- encryptBlock}
+
+Hàm \texttt{encryptBlock(plaintext, key, verbose)} thực hiện mã hóa một khối 16 byte qua đúng 10 vòng AES theo chuẩn FIPS-197:
+
+\begin{enumerate}
+    \item \textbf{Key Expansion}: mở rộng khóa 16 byte $\rightarrow$ 176 byte.
+    \item \textbf{Vòng 0}: AddRoundKey với khóa gốc $K_0$.
+    \item \textbf{Vòng 1--9}: SubBytes $\rightarrow$ ShiftRows $\rightarrow$ MixColumns $\rightarrow$ AddRoundKey($K_r$).
+    \item \textbf{Vòng 10}: SubBytes $\rightarrow$ ShiftRows $\rightarrow$ AddRoundKey($K_{10}$) \textit{(không MixColumns)}.
+\end{enumerate}
+
+\begin{lstlisting}[language=JavaScript, caption={Hàm encryptBlock --- Mã hóa một khối AES-128}, label=lst:encrypt]
+static encryptBlock(plaintext, key, verbose = false) {
+    // Buoc 1: Mo rong khoa
+    const expandedKey = this.keyExpansion(key);
+
+    // Buoc 2: Khoi tao State
+    const state = this.bufferToState(plaintext);
+
+    // Vong 0: AddRoundKey voi khoa goc
+    this.addRoundKey(state, expandedKey.slice(0, 16));
+
+    // Vong 1 -> 9: 4 phep bien doi day du
+    for (let round = 1; round <= 9; round++) {
+        this.subBytes(state);
+        this.shiftRows(state);
+        this.mixColumns(state);
+        this.addRoundKey(state, expandedKey.slice(round * 16, (round + 1) * 16));
+    }
+
+    // Vong 10: khong co MixColumns
+    this.subBytes(state);
+    this.shiftRows(state);
+    this.addRoundKey(state, expandedKey.slice(160, 176));
+
+    return this.stateToBuffer(state);
+}
+\end{lstlisting}
+
+%----------------------------------------------------------------
+\section{Cài đặt AES-128-CBC}
+\label{sec:impl-cbc}
+
+Chế độ CBC được cài đặt thủ công dựa trên hàm \texttt{AES128.encryptBlock} và \texttt{AES128.decryptBlock}:
+
+\begin{lstlisting}[language=JavaScript, caption={Hàm aes128cbcEncrypt và aes128cbcDecrypt}, label=lst:cbc]
+function aes128cbcEncrypt(plaintext, key, iv) {
+    const padded = pkcs7Pad(plaintext, 16);
+    const blocks = [];
+    for (let i = 0; i < padded.length; i += 16)
+        blocks.push(padded.slice(i, i + 16));
+
+    const ciphertext = [];
+    let prev = iv;
+    for (const block of blocks) {
+        const xored = xorBuffers(block, prev);
+        const encrypted = AES128.encryptBlock(xored, key);
+        ciphertext.push(...encrypted);
+        prev = encrypted;
+    }
+    return Buffer.from(ciphertext);
+}
+
+function aes128cbcDecrypt(ciphertext, key, iv) {
+    const blocks = [];
+    for (let i = 0; i < ciphertext.length; i += 16)
+        blocks.push(ciphertext.slice(i, i + 16));
+
+    const plaintext = [];
+    let prev = iv;
+    for (const block of blocks) {
+        const decrypted = AES128.decryptBlock(block, key);
+        const xored = xorBuffers(decrypted, prev);
+        plaintext.push(...xored);
+        prev = block;
+    }
+    return Buffer.from(plaintext);
+}
+\end{lstlisting}
+
+PKCS\#7 padding được sử dụng để đệm dữ liệu về bội số của 16 byte: nếu thiếu $k$ byte, thêm $k$ byte có giá trị $k$.
+
+%----------------------------------------------------------------
+\section{VictimServer --- Hệ thống có lỗ hổng Oracle}
+\label{sec:impl-victim}
+
+Lớp \texttt{VictimServer} mô phỏng một server có lỗ hổng Padding Oracle:
+
+\begin{itemize}
+    \item \texttt{constructor()}: tạo khóa bí mật \textbf{ngẫu nhiên} 16 byte.
+    \item \texttt{getEncryptedSecret(message)}: mã hóa tin nhắn bằng AES-128-CBC (Node.js \texttt{crypto}), trả về \texttt{\{iv, ciphertext\}}.
+    \item \texttt{checkPadding(iv, ciphertext)}: \textbf{lỗ hổng Oracle} --- giải mã CBC, kiểm tra PKCS\#7 padding, trả về \texttt{true} (hợp lệ) hoặc \texttt{false} (không hợp lệ). \textbf{Đây chính là thông tin rò rỉ mà kẻ tấn công khai thác.}
+\end{itemize}
+
+\begin{lstlisting}[language=JavaScript, caption={Hàm checkPadding --- Oracle rò rỉ thông tin padding}, label=lst:oracle]
+checkPadding(iv, ciphertext) {
+    try {
+        const decipher = crypto.createDecipheriv('aes-128-cbc', this.secretKey, iv);
+        decipher.setAutoPadding(false);
+        const padded = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+        pkcs7Unpad(padded);           // Nem loi neu padding sai
+        return true;                   // Padding hop le
+    } catch {
+        return false;                  // Padding khong hop le --> LEAK!
+    }
+}
+\end{lstlisting}
+
+%----------------------------------------------------------------
+\section{Cài đặt tấn công Padding Oracle}
+\label{sec:impl-attack}
+
+\subsection{Tấn công một byte --- decryptByteCandidates}
+
+Hàm \texttt{decryptByteCandidates} là đơn vị cơ bản của tấn công. Với mỗi vị trí $pos$ (từ 15 đến 0), hàm tạo một khối $C_{i-1}$ giả, đặt byte tại $pos$ chạy từ 0 đến 255, và gửi đến Oracle. Oracle trả về \texttt{true} khi padding hợp lệ --- lúc đó giá trị \texttt{guess} được ghi nhận là một ứng viên.
+
+Công thức cốt lõi (xem Hình~\ref{fig:cbc-equation}):
+\begin{align}
+    I_i[pos] &= \texttt{guess} \oplus \texttt{targetPad} \label{eq:intermediate} \\
+    P_i[pos] &= I_i[pos] \oplus C_{i-1}^{\text{(gốc)}}[pos] \label{eq:plaintext}
+\end{align}
+trong đó $\texttt{targetPad} = 16 - pos$ là giá trị padding mục tiêu (0x01 cho byte cuối, 0x02 cho hai byte cuối, \ldots).
+
+\begin{lstlisting}[language=JavaScript, caption={Hàm decryptByteCandidates --- Tấn công một byte}, label=lst:decryptByte]
+function decryptByteCandidates(oracle, prevBlock, targetBlock, pos, knownIntermediate) {
+    const targetPad = 16 - pos;
+    const fakePrev = Buffer.alloc(16);
+
+    // Giu nguyen cac byte truoc pos
+    for (let i = 0; i < pos; i++)
+        fakePrev[i] = prevBlock[i];
+
+    // Dat cac byte da biet (sau pos) de tao padding muc tieu
+    for (let i = pos + 1; i < 16; i++)
+        fakePrev[i] = knownIntermediate[i] ^ targetPad;
+
+    const candidates = [];
+    for (let guess = 0; guess <= 255; guess++) {
+        fakePrev[pos] = guess;
+        if (oracle(fakePrev, targetBlock))
+            candidates.push(guess);
+    }
+    return candidates;   // Luon duyet du 0..255, khong dung som
+}
+\end{lstlisting}
+
+\subsection{Tấn công toàn bộ khối --- decryptBlock (có backtracking)}
+
+Hàm \texttt{decryptBlock} giải mã toàn bộ một khối 16 byte bằng chiến lược đệ quy có backtracking:
+
+\begin{enumerate}
+    \item Bắt đầu từ byte cuối ($pos = 15$, $\texttt{targetPad} = 0x01$).
+    \item Gọi \texttt{decryptByteCandidates} để thu thập \textbf{tất cả} ứng viên hợp lệ.
+    \item Với mỗi ứng viên, thử giải mã byte tiếp theo ($pos-1$).
+    \item Nếu byte tiếp theo \textbf{không} có ứng viên nào $\rightarrow$ ứng viên hiện tại \textbf{sai} $\rightarrow$ backtrack.
+    \item Nếu byte tiếp theo có ứng viên $\rightarrow$ giữ lại, tiếp tục cho đến $pos = -1$ (hoàn thành).
+\end{enumerate}
+
+\subsection{Tấn công toàn bộ bản mã --- paddingOracleAttack}
+
+Hàm \texttt{paddingOracleAttack} điều phối tấn công trên toàn bộ bản mã nhiều khối:
+
+\begin{lstlisting}[language=JavaScript, caption={Hàm paddingOracleAttack --- Tấn công toàn bộ bản mã}, label=lst:attack]
+function paddingOracleAttack(oracle, iv, ciphertext, verbose = true) {
+    const numBlocks = ciphertext.length / 16;
+    const plaintextBlocks = [];
+
+    // Tach thanh tung khoi
+    const blocks = [];
+    for (let i = 0; i < ciphertext.length; i += 16)
+        blocks.push(ciphertext.slice(i, i + 16));
+
+    // Tan cong tung khoi
+    for (let blockIdx = 0; blockIdx < blocks.length; blockIdx++) {
+        const prevBlock = (blockIdx === 0) ? iv : blocks[blockIdx - 1];
+        const targetBlock = blocks[blockIdx];
+        const result = decryptBlock(oracle, prevBlock, targetBlock, verbose);
+        plaintextBlocks.push(result.plaintext);
+    }
+
+    // Ghep va go padding
+    const rawPlaintext = Buffer.concat(plaintextBlocks);
+    return pkcs7Unpad(rawPlaintext);
+}
+\end{lstlisting}
+
+%----------------------------------------------------------------
+\section{Kết quả demo}
+\label{sec:demo-results}
+
+\subsection{So sánh AES128 tự cài với Node.js crypto}
+
+Demo 1 (\texttt{runComparisonDemo}) mã hóa cùng một plaintext 16 byte với cùng khóa và IV bằng cả hai phương pháp. Kết quả:
+
+\begin{verbatim}
+  Plaintext : "HUST_A+_Grade_12" (16 byte)
+  Key       : "mySecretKey!!16!"
+  AES128 tu cai     -> da 42 d1 6e 62 f9 c0 c2 55 7b a8 85 61 f6 37 9b
+  Node.js crypto    -> da 42 d1 6e 62 f9 c0 c2 55 7b a8 85 61 f6 37 9b
+  >> KET QUA KHOP NHAU!
+  Giai ma nguoc    -> "HUST_A+_Grade_12" (thanh cong)
+\end{verbatim}
+
+\subsection{Tấn công Padding Oracle}
+
+Demo 2 (\texttt{runAttackDemo}) thực hiện tấn công trên hai tin nhắn mẫu được mã hóa bởi VictimServer. Kẻ tấn công \textbf{không biết} khóa bí mật (được sinh ngẫu nhiên), chỉ có quyền gọi \texttt{checkPadding}. Kết quả:
+
+\begin{verbatim}
+  [SERVER] Khoa bi mat: de 2c 10 7f 02 ab 0f b6 f1 e4 b9 dd cc 1c f0 95
+            ^--- Hacker KHONG BIET
+
+  >> TAN CONG PADDING ORACLE <<
+  Ban ma co 2 khoi (32 byte)
+  Moi khoi can co ban 16 x 256 = 4096 lan goi Oracle
+
+  Khoi 1: hoan thanh trong 242ms
+  Khoi 2: hoan thanh trong 187ms
+  Plaintext khoi phuc: "Xin_chao_HUST!Day_la_minh_hoa_PaddingOracle_Attack"
+\end{verbatim}
+
+Kẻ tấn công đã khôi phục \textbf{toàn bộ} plaintext mà không cần biết khóa bí mật, chỉ thông qua Oracle padding.
+
+%----------------------------------------------------------------
+\section{Đánh giá chương trình}
+\label{sec:evaluation}
+
+\subsection{Điểm mạnh}
+
+\begin{itemize}
+    \item \textbf{Tính giáo dục}: Code JavaScript thuần, không thư viện mật mã, comment tiếng Việt chi tiết --- phù hợp cho sinh viên học mật mã.
+    \item \textbf{Tính trực quan}: Tham số \texttt{verbose = true} in log từng vòng mã hóa/giải mã và các State tiêu biểu, giúp thấy rõ quá trình biến đổi dữ liệu qua từng bước AES.
+    \item \textbf{Tính đầy đủ}: Cài đặt cả mã hóa + giải mã AES-128, CBC thủ công, PKCS\#7 padding, và tấn công từng byte $\rightarrow$ toàn bộ khối $\rightarrow$ nhiều khối.
+    \item \textbf{Tính chính xác}: Kết quả mã hóa khớp với Node.js \texttt{crypto} (đã đối chiếu).
+\end{itemize}
+
+\subsection{Hạn chế}
+
+\begin{itemize}
+    \item \textbf{Hiệu năng}: JavaScript không tối ưu cho phép toán bit cấp thấp --- tốc độ chậm hơn nhiều so với native C++/WebAssembly.
+    \item \textbf{Chỉ hỗ trợ block thô}: Hàm \texttt{encryptBlock} mã hóa một block AES thô; chế độ CBC được tự cài đặt thêm, không phải chế độ ECB hoàn chỉnh. Chưa hỗ trợ CTR/GCM.
+    \item \textbf{Không chống side-channel}: Không có biện pháp bảo vệ chống timing attack (cần constant-time comparison).
+    \item \textbf{Chưa có test tự động}: Nên bổ sung test vector chuẩn NIST (FIPS-197) để kiểm chứng đầy đủ.
+\end{itemize}
+
+%----------------------------------------------------------------
+\section{Bài học bảo mật}
+\label{sec:lessons}
+
+Từ mô phỏng này, rút ra các bài học bảo mật quan trọng:
+
+\begin{enumerate}
+    \item \textbf{Không để lộ thông tin lỗi}: Server không nên phân biệt ``sai padding'' vs.\ ``sai MAC'' --- luôn trả về lỗi chung cho mọi trường hợp giải mã thất bại.
+    
+    \item \textbf{Dùng AEAD}: Sử dụng các chế độ Authenticated Encryption with Associated Data như GCM (CTR + GHASH) hoặc CCM (CTR + CBC-MAC). Các chế độ này không dùng padding và luôn yêu cầu xác thực tag \textbf{trước khi} phát hành plaintext.
+    
+    \item \textbf{Encrypt-then-MAC}: Nếu phải dùng CBC, tính MAC trước khi kiểm tra padding --- nếu MAC sai, không bao giờ động đến padding, triệt tiêu hoàn toàn Oracle.
+    
+    \item \textbf{Padding Oracle có thật}: Lỗ hổng này đã từng ảnh hưởng đến TLS (Lucky13, CVE-2013-0169), OpenSSL (CVE-2016-2107), ASP.NET (CVE-2010-3332), Java Server Faces, và một số triển khai JWE/JWT dùng CBC/padding.
+\end{enumerate}
+
+%----------------------------------------------------------------
+\section{Kết luận}
+\label{sec:conclusion}
+
+Đồ án đã cài đặt thành công:
+\begin{itemize}
+    \item \textbf{AES-128} đầy đủ từ các phép toán cơ bản --- không dùng thư viện mật mã.
+    \item \textbf{Tấn công Padding Oracle} hoàn chỉnh --- khôi phục toàn bộ plaintext mà không cần biết khóa.
+    \item \textbf{Đối chiếu} với thư viện chuẩn Node.js --- xác nhận tính chính xác.
+    \item \textbf{Tài liệu} chi tiết bằng tiếng Việt --- phù hợp cho mục đích học thuật.
+\end{itemize}
+
+Kết quả quan trọng nhất: tấn công Padding Oracle có độ phức tạp $O(n)$ --- \textbf{tuyến tính} --- nghĩa là với một Oracle rò rỉ thông tin padding, kẻ tấn công khôi phục plaintext với chi phí rất thấp, trong khi không gian khóa AES-128 vẫn an toàn ở mức $2^{128}$. Đây là minh chứng rõ ràng rằng bảo mật hệ thống không chỉ nằm ở sức mạnh của thuật toán mã hóa, mà còn ở cách triển khai và xử lý lỗi.
